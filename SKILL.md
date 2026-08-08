@@ -102,14 +102,22 @@ error and names `ADDRESSES_PATH`; with one it completes a dry-run, exit 0.
 The `/launch` page shows those two lines as live commands again, and not a
 moment before the package existed.
 
+### Distribution
+
+Both routes are live and both were checked, not assumed:
+
+| | |
+|---|---|
+| `npx skills add 0g-axion/comfy-skills` | the repo is public; a clean directory installs it to `.agents/skills/comfy-launch/` |
+| `npm i -g comfy-cli` | 0.1.0 on npm; installs and dry-runs in a sandbox with no tsx |
+
+**This file is the source.** It lives in the Comfy repo and is mirrored to
+`0g-axion/comfy-skills`, which exists so `skills add` has something to fetch —
+that command takes a GitHub owner/repo and has no npm route. When this file
+changes, push the mirror too, or the two drift.
+
 ### Still open
 
-1. The GitHub repo `0g-axion/comfy-skills` does not exist, and the main repo is
-   private, so `npx skills add 0g-axion/comfy-skills` still has nothing to
-   fetch. It is no longer a blocker — `npm i -g comfy-cli` is the simpler
-   instruction and it works — but this file is not installable as a *skill*
-   until that repo is public.
-2. No addresses ship with the package, because Comfy is not on mainnet and
-   there is nothing fixed to bundle. Once the contracts land, bundling the
-   mainnet `deployed-addresses.json` would remove the `ADDRESSES_PATH` step for
-   everyone.
+- No addresses ship with the package, because Comfy is not on mainnet and there
+  is nothing fixed to bundle. Once the contracts land, bundling the mainnet
+  `deployed-addresses.json` removes the `ADDRESSES_PATH` step for everyone.
