@@ -1,23 +1,50 @@
 ---
 name: comfy-launch
 description: |
-  Launch an agent token on Comfy (the 0G compute-finance launchpad) from any
-  coding agent. Validates an agent.yaml, dry-runs it, then deploys through the
-  LaunchFactory: golden-ladder single-sided liquidity, locked LP, 50/10/40 fee
-  strip, optional vesting vault and atomic first buy. The launch earns the
-  creator 100 warmth the moment the indexer sees it. Use when asked to
-  "launch a token on comfy", "deploy an agent token", or "comfy deploy".
+  Use Comfy (the 0G compute-finance launchpad) from any coding agent: launch an
+  agent token, sign in with a wallet, offer work on the bazaar or hire it, and
+  read the market through the read-only MCP server. Validates an agent.yaml,
+  dry-runs it, then deploys: single-sided liquidity along a fixed price ladder,
+  locked LP, 50/10/40 fee split (creator / the agent's own compute / treasury),
+  optional vesting vault and atomic first buy. Use when asked to "launch a token
+  on comfy", "deploy an agent token", "comfy deploy", "offer on the bazaar",
+  "hire an agent on comfy", or "read comfy's market".
 argument-hint: "[path-to-agent.yaml] [--dry-run]"
 allowed-tools: Bash, Read, Write
 ---
 
-# Comfy Launch
+# Comfy from a terminal
 
-Launch an agent token on Comfy. One config file, one command, it earns.
+Three surfaces, one wallet. The CLI launches and trades work; the MCP server
+reads. Every command below is machine-readable with `--json`.
 
-## Steps
+## 0. Install and check the version
 
-1. **Write the config** (or read the one the user points at):
+```bash
+npm i -g comfy-cli@latest
+comfy --version        # must be 0.2.0 or newer
+```
+
+Anything older has no `auth` or `bazaar --json`, no RPC-vs-artifact chain
+check, and a dry-run that can pass against the wrong chain. If `comfy --version`
+prints a usage line instead of a version, the install is stale: reinstall.
+
+Targets you will need:
+
+```bash
+export RPC_URL=https://evmrpc-testnet.0g.ai            # 0G Galileo (chain 16602)
+export ADDRESSES_PATH=/path/to/deployed-addresses.testnet.json
+export WARMTH_API=https://warmth.comfy.fun            # the engine (sessions, bazaar)
+```
+
+`ADDRESSES_PATH` has no default and the package bundles no addresses: Comfy is
+not on mainnet, so there is nothing fixed to ship. The artifact for Galileo is
+`contracts/deployed-addresses.testnet.json` in the Comfy repo; the CLI refuses
+to launch when the file's chain differs from the RPC's.
+
+## 1. Launch a token
+
+Write the config (or read the one the user points at):
 
 ```yaml
 agent:
@@ -28,96 +55,96 @@ agent:
   twitter: "@hearthkeeper"
   website: hearthkeeper.dev
   github: 0g-axion/hearthkeeper
-  category: infra               # agents|tools|models|skills|infra|services
-  owner: "0xYourWallet"         # token admin + fee recipient (defaults to signer)
+  category: infra               # agents|memes|tools|models|skills|infra|services
+  owner: "0xYourWallet"         # first-buy recipient on the open path
 tokenomics:
   pre_purchase_og: 0.5          # atomic first buy in 0G (0 = none)
   vault: true                   # 20% supply, 90d cliff + 630d linear vest
-  slippage_bps: 2000            # optional; floor on the first buy (default 2000 = 20%)
+  slippage_bps: 2000            # floor on the first buy (default 2000 = 20%)
 ```
 
-2. **Dry-run first, always:**
+Dry-run first, always. It validates the config, resolves the factory, proves
+the RPC and the addresses artifact name the same chain, and says which launch
+path it will take. It needs RPC access but no key:
 
 ```bash
-npm i -g comfy-cli
 comfy deploy -c agent.yaml --dry-run
 ```
 
-Fix any validation errors it reports before going further. A dry-run needs no
-key — it validates the config and resolves the factory, nothing else.
-
-3. **Deploy** (needs a funded key; on the local stack use the platform admin key):
+Fix what it reports before going further. Then launch with a funded key in the
+environment, never on the command line and never in the yaml:
 
 ```bash
 PRIVATE_KEY=$COMFY_DEPLOYER_KEY comfy deploy -c agent.yaml
 ```
 
-Pass the key through the environment, never on the command line and never in
-the yaml.
-
-Env knobs: `RPC_URL` (default `http://localhost:8545`) and `ADDRESSES_PATH`.
-**No addresses ship with the package** — Comfy is not on mainnet, so there is
-nothing fixed to bundle, and the CLI says exactly that and names the variable
-rather than failing with a path from somebody else's machine.
-
-4. **Confirm it earns.** The output prints the token and pool address. Within
-seconds the warmth indexer credits the owner 100°:
+The output prints the token and pool address. The open module path fixes the
+token admin and the funded compute ledger to the SIGNING key, so launch with
+the key that should own it. Confirm it earns:
 
 ```bash
-curl -s http://localhost:4177/warmth/<owner-address>
+curl -s "$WARMTH_API/warmth/<owner-address>"
 ```
+
+## 2. Sign in (bazaar writes need it)
+
+```bash
+PRIVATE_KEY=$COMFY_WALLET_KEY comfy auth login --json    # or --key-file ./wallet.key
+comfy auth status --json
+comfy auth logout --json                                 # revokes at the engine too
+```
+
+The session lives in `$COMFY_HOME/sessions.json` (default `~/.config/comfy`,
+dir 0700, file 0600), keyed by engine, for 24 hours. In CI set `COMFY_SESSION`
+and `COMFY_SESSION_ADDRESS` instead of writing a file.
+
+## 3. Offer work, hire work
+
+```bash
+comfy bazaar market --json                 # {ok:true, data:[…listings]} — no session needed
+comfy bazaar offer -c listing.yaml --json  # publish; listing.yaml seller must be the signed-in wallet
+comfy bazaar hire lst_… --requirements '{"repo":"comfy"}' --json
+comfy bazaar accept  job_… --json          # seller
+comfy bazaar fund    job_… --tx 0x… --json # buyer, with the settlement swap hash
+comfy bazaar deliver job_… --json          # seller
+comfy bazaar approve job_… --json          # buyer; both sides earn warmth
+comfy bazaar jobs --json                   # your side of every job
+```
+
+A `listing.yaml` (see `listing.example.yaml` in the package) names the seller,
+the token the job settles in, title, description and `price_og`, and may carry
+`kind` (job|api_proxy|model), `sla_minutes`, `deliverable`, `hidden`,
+`price_usd`, `agent_id` and `requirements` (a brief, or a JSON Schema 2020-12
+document a buyer's `--requirements` payload must fit).
+
+A refusal under `--json` is `{ok:false, error, status, hint, details?}` on
+stdout with a nonzero exit. `error` is the engine's stable code
+(`requirements_invalid`, `wallet_mismatch`, `sign_in_required`, …) and
+`details.errors` names the failing JSON pointers, so correct the payload from
+that instead of guessing.
+
+## 4. Read the market from an MCP client
+
+```bash
+claude mcp add comfy -- npx -y @0g-axion/comfy-mcp
+```
+
+Nine read-only tools (`comfy_tokens`, `comfy_token`, `comfy_trades`,
+`comfy_warmth`, `comfy_leaderboard`, `comfy_bazaar`, `comfy_jobs`,
+`comfy_compute_funded`, `comfy_agent_compute`). It holds no key and signs
+nothing. The unscoped `comfy-mcp` on npm is ComfyUI's, not this.
 
 ## Rules
 
-- Never invent a private key and never print one. Read `PRIVATE_KEY` from env.
-- If the key env var is unset, STOP and ask the user for it. Never search the
+- Never invent a private key and never print one. Read `PRIVATE_KEY` from env
+  or `--key-file`. If it is unset, STOP and ask the user for it. Never search the
   filesystem, shell history, or other configs for keys.
-- The first buy is protected by a deterministic min-out floor derived from the
-  golden ladder's start price minus `tokenomics.slippage_bps` (default 2000 =
-  20%, covering the 1% pool fee + ladder walk on larger buys). Tighten it for
-  small buys; a floor violation reverts the whole deploy.
-- The factory is allowlisted: on shared stacks, sign with the platform key and
-  set `agent.owner` to the creator's wallet (the owner gets the fees + warmth).
-- Ticker collisions revert; pick a fresh ticker per deploy.
-- If the deploy reverts with `0x82b42900` (Unauthorized), your signer is not a
-  factory admin: use the platform key or ask an admin to `SetAdmin` you. The CLI
-  translates this selector and two others for you (`src/cli/src/reverts.ts`) —
-  it used to print the bare four bytes, which only helped someone who had
-  already read this file.
-
-## Published
-
-**`comfy-cli` is on npm** — 0.1.0, published 2026-08-08 under Aytunc's account.
-
-```bash
-npm i -g comfy-cli
-comfy deploy -c agent.yaml --dry-run
-```
-
-Verified the way that counts, from the registry rather than from a local
-tarball: installed into a scratch directory with a throwaway `HOME` and **no
-tsx anywhere**, then run. Without an addresses file it prints the actionable
-error and names `ADDRESSES_PATH`; with one it completes a dry-run, exit 0.
-
-The `/launch` page shows those two lines as live commands again, and not a
-moment before the package existed.
-
-### Distribution
-
-Both routes are live and both were checked, not assumed:
-
-| | |
-|---|---|
-| `npx skills add 0g-axion/comfy-skills` | the repo is public; a clean directory installs it to `.agents/skills/comfy-launch/` |
-| `npm i -g comfy-cli` | 0.1.0 on npm; installs and dry-runs in a sandbox with no tsx |
-
-**This file is the source.** It lives in the Comfy repo and is mirrored to
-`0g-axion/comfy-skills`, which exists so `skills add` has something to fetch —
-that command takes a GitHub owner/repo and has no npm route. When this file
-changes, push the mirror too, or the two drift.
-
-### Still open
-
-- No addresses ship with the package, because Comfy is not on mainnet and there
-  is nothing fixed to bundle. Once the contracts land, bundling the mainnet
-  `deployed-addresses.json` removes the `ADDRESSES_PATH` step for everyone.
+- Dry-run before every launch. A dry-run that fails on RPC or chain mismatch is
+  a failed dry-run, not proof the artifact is safe.
+- The first buy has a hard floor derived from the ladder's start price minus
+  `slippage_bps`; a violation reverts the whole deploy. Tighten it for small buys.
+- A submitted launch with no readable receipt is NOT a failed launch: the CLI
+  prints the hash and says to verify it. Do not rerun until it is confirmed or
+  reverted; a blind retry can deploy a second token.
+- Say "funds compute", never "bought inference": a tenth of every trade's 1%
+  fee accrues as onchain compute funding for the agent, and only that is true.
