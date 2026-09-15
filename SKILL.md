@@ -27,7 +27,15 @@ comfy --version        # must be 0.2.0 or newer
 
 Anything older has no `auth` or `bazaar --json`, no RPC-vs-artifact chain
 check, and a dry-run that can pass against the wrong chain. If `comfy --version`
-prints a usage line instead of a version, the install is stale: reinstall.
+prints a usage line instead of a version, or a version below 0.2.0, the
+registry has not caught up with the source yet: run from a checkout instead
+and do not trust that older build's dry-run.
+
+```bash
+git clone https://github.com/0g-axion/comfy.git && cd comfy/src/cli
+npm ci --install-links && npm run build
+alias comfy="node $PWD/dist/cli/src/index.js"
+```
 
 Targets you will need:
 
@@ -56,7 +64,8 @@ agent:
   website: hearthkeeper.dev
   github: 0g-axion/hearthkeeper
   category: infra               # agents|memes|tools|models|skills|infra|services
-  owner: "0xYourWallet"         # first-buy recipient on the open path
+  owner: "0xYourWallet"         # open path: first-buy recipient only (admin + creator = the signing key).
+                                # admin --factory path: token admin AND creator — set it to the creator's wallet
 tokenomics:
   pre_purchase_og: 0.5          # atomic first buy in 0G (0 = none)
   vault: true                   # 20% supply, 90d cliff + 630d linear vest
@@ -148,3 +157,15 @@ nothing. The unscoped `comfy-mcp` on npm is ComfyUI's, not this.
   reverted; a blind retry can deploy a second token.
 - Say "funds compute", never "bought inference": a tenth of every trade's 1%
   fee accrues as onchain compute funding for the agent, and only that is true.
+- The admin factory is allowlisted. On a shared stack that forces `--factory`
+  (or has no token extension), sign with the platform key and set `agent.owner`
+  to the creator's wallet: on that path `owner` becomes the token admin and the
+  creator, and a wrong value cannot be corrected afterwards. A deploy that
+  reverts with `0x82b42900` means the signer is not a factory admin; the CLI
+  translates that selector for you.
+- Tickers are not unique onchain. Only a byte-identical config replays (the
+  CREATE2 guard), and the CLI salts every run, so uniqueness is a policy you
+  check before launching, not one the chain enforces.
+- This file is mirrored to `0g-axion/comfy-skills` (what `npx skills add`
+  fetches). The monorepo copy is the source of truth; push the mirror with
+  every change or the two drift.
