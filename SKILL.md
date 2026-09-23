@@ -52,10 +52,17 @@ The old `deploy/addresses/deployed-addresses.testnet.json` describes the retired
 stack; it is not the Infinity manifest. Use the RPC and engine for the selected
 network; do not mix staging and production sessions.
 
+The example selects Galileo (16602). Mainnet (16661) uses the same CLI code
+with its own compatible Infinity deployment manifest and RPC; never reuse the
+Galileo addresses on mainnet. Mainnet deployment is not proven by the testnet
+dry-run. For auth/bazaar, select that network's `WARMTH_API` and, if pinning
+authentication, `COMFY_CHAIN_ID`.
+
 ## 1. Launch a token
 
-Ask for the name, ticker, description and public creator wallet. Discuss any
-custom opening price, tax, launch delay, opening-charge decay or fee recipients
+Ask for the name, ticker, description and the public address of the wallet
+whose key the user will set locally in `PRIVATE_KEY`. Discuss any custom
+opening price, tax, launch delay, opening-charge decay or fee recipients
 before setting them. Do not invent fees or silently add recipients.
 
 ```yaml
@@ -78,7 +85,6 @@ launch:
   floor_bps: 0
   decay_seconds: 0
   recipients: []               # optional { wallet: "0x...", share_bps: 2000 } entries
-
 ```
 
 Replace `0xYourWallet` with the public signer address. On Infinity `agent.owner`
@@ -158,6 +164,10 @@ that instead of guessing.
 ```bash
 claude mcp add comfy -- npx -y @0g-axion/comfy-mcp
 ```
+
+MCP defaults to Galileo. For another deployment, configure
+`COMFY_ENGINE_ORIGIN` and `COMFY_INDEXER_GRAPHQL_HTTP` in the MCP process's
+environment. The CLI's `RPC_URL` and `WARMTH_API` do not switch MCP networks.
 
 Nine read-only tools (`comfy_tokens`, `comfy_token`, `comfy_trades`,
 `comfy_warmth`, `comfy_leaderboard`, `comfy_bazaar`, `comfy_jobs`,
