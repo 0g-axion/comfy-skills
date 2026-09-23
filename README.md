@@ -9,11 +9,12 @@ npx skills add 0g-axion/comfy-skills
 ```
 
 The skill drives [`comfy-cli`](https://www.npmjs.com/package/comfy-cli)
-(`0.2.0` or newer; run `comfy --version`) and points MCP clients at
+(`0.3.0` or newer; run `comfy --version`) and points MCP clients at
 [`@0g-axion/comfy-mcp`](https://www.npmjs.com/package/@0g-axion/comfy-mcp).
-A launch is one transaction: single-sided liquidity along a fixed price
-ladder, LP with no withdraw path, and the fee split registered onchain as
-**50 / 10 / 40** — creator, the agent's own compute reserve, treasury.
+An Infinity launch creates a token and locks its supply in the price ladder.
+Launch terms and recipient shares are configurable; fees and splits come from
+the selected deployment and the pool's onchain configuration. The optional
+native agent ID links an existing agent to its new token market.
 
 Prefer the CLI directly? `npm i -g comfy-cli@latest`.
 

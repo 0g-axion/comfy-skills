@@ -1,99 +1,120 @@
 ---
 name: comfy-launch
-description: |
-  Use Comfy (the 0G compute-finance launchpad) from any coding agent: launch an
-  agent token, sign in with a wallet, offer work on the bazaar or hire it, and
-  read the market through the read-only MCP server. Validates an agent.yaml,
-  dry-runs it, then deploys: single-sided liquidity along a fixed price ladder,
-  locked LP, 50/10/40 fee split (creator / the agent's own compute / treasury),
-  optional vesting vault and atomic first buy. Use when asked to "launch a token
-  on comfy", "deploy an agent token", "comfy deploy", "offer on the bazaar",
-  "hire an agent on comfy", or "read comfy's market".
-argument-hint: "[path-to-agent.yaml] [--dry-run]"
+description: Launch an agent token on Comfy using the Infinity CLI, configure launch terms and fee recipients, sign in with a wallet, offer or hire work on the bazaar, and read the market through the read-only MCP server. Use for Comfy terminal launches, comfy deploy, bazaar work, and Comfy market reads.
 allowed-tools: Bash, Read, Write
 ---
 
 # Comfy from a terminal
 
-Three surfaces, one wallet. The CLI launches and trades work; the MCP server
-reads. Every command below is machine-readable with `--json`.
+Use the CLI to launch and trade work; use MCP to read. Auth and bazaar support
+`--json`; deploy currently reports human-readable progress and transaction hashes.
 
-## 0. Install and check the version
+## 0. Install and select the deployment
 
 ```bash
 npm i -g comfy-cli@latest
-comfy --version        # must be 0.2.0 or newer
+comfy --version  # requires 0.3.0+ for Infinity launch parameters
 ```
 
-Anything older has no `auth` or `bazaar --json`, no RPC-vs-artifact chain
-check, and a dry-run that can pass against the wrong chain. If `comfy --version`
-prints a usage line instead of a version, or a version below 0.2.0, the
-registry has not caught up with the source yet: run from a checkout instead
-and do not trust that older build's dry-run.
+If npm still serves an older version, use an updated Comfy checkout after the
+Infinity CLI change has merged:
 
 ```bash
-git clone https://github.com/0g-axion/comfy.git && cd comfy/src/cli
+git clone --branch dev https://github.com/0g-axion/comfy.git
+cd comfy/src/cli
 npm ci --install-links && npm run build
 alias comfy="node $PWD/dist/cli/src/index.js"
+cd ../..
 ```
-
-Targets you will need:
 
 ```bash
-export RPC_URL=https://evmrpc-testnet.0g.ai            # 0G Galileo (chain 16602)
-export ADDRESSES_PATH=/path/to/deployed-addresses.testnet.json
-export WARMTH_API=https://warmth.comfy.fun            # the engine (sessions, bazaar)
+export RPC_URL=https://evmrpc-testnet.0g.ai  # Galileo, chain 16602
+export WARMTH_API=https://warmth.comfy.fun # CLI auth and bazaar
+# From a Comfy checkout: select the same generation as the launch page.
+node --input-type=module -e '
+import fs from "node:fs";
+const root = "src/indexer/infinity/deployments/";
+const admission = JSON.parse(fs.readFileSync(root + "galileo-launch-admission.json"));
+const inventory = JSON.parse(fs.readFileSync(root + "galileo-generations-20260922.json"));
+const row = inventory.generations.find(row => row.id === admission.generationId);
+if (!row) throw Error("launch generation missing");
+fs.writeFileSync("comfy-deployment.json", JSON.stringify(row.deployment, null, 2));
+'
+export ADDRESSES_PATH="$PWD/comfy-deployment.json"
 ```
 
-`ADDRESSES_PATH` has no default and the package bundles no addresses: Comfy is
-not on mainnet, so there is nothing fixed to ship. The artifact for Galileo is
-`contracts/deployed-addresses.testnet.json` in the Comfy repo; the CLI refuses
-to launch when the file's chain differs from the RPC's.
+An npm install does not include a deployment manifest. Obtain a current
+`0g-axion/comfy` checkout for the selection above (`git clone --branch dev
+https://github.com/0g-axion/comfy.git`), or use the Infinity manifest supplied by
+the operator of your target deployment. Run the selection from the checkout
+root. Keep `ADDRESSES_PATH` absolute when returning to your agent directory.
+The old `deploy/addresses/deployed-addresses.testnet.json` describes the retired
+stack; it is not the Infinity manifest. Use the RPC and engine for the selected
+network; do not mix staging and production sessions.
 
 ## 1. Launch a token
 
-Write the config (or read the one the user points at):
+Ask for the name, ticker, description and public creator wallet. Discuss any
+custom opening price, tax, launch delay, opening-charge decay or fee recipients
+before setting them. Do not invent fees or silently add recipients.
 
 ```yaml
 agent:
-  name: hearthkeeper            # 2-48 chars, what traders see
-  ticker: HRTH                  # 3-8 uppercase letters/digits
+  name: hearthkeeper
+  ticker: HRTH
   description: keeps the fire going. watches infra, reports what it earns.
-  image: ""                     # https url or empty
+  category: infra               # agents|memes|tools|models|skills|infra|services
+  owner: "0xYourWallet"         # public creator address; must match PRIVATE_KEY on Infinity
+  # id: "0"                    # optional EXISTING native agent ID, quoted (zero is valid)
+  image: ""
   twitter: "@hearthkeeper"
   website: hearthkeeper.dev
   github: 0g-axion/hearthkeeper
-  category: infra               # agents|memes|tools|models|skills|infra|services
-  owner: "0xYourWallet"         # open path: first-buy recipient only (admin + creator = the signing key).
-                                # admin --factory path: token admin AND creator — set it to the creator's wallet
-tokenomics:
-  pre_purchase_og: 0.5          # atomic first buy in 0G (0 = none)
-  vault: true                   # 20% supply, 90d cliff + 630d linear vest
-  slippage_bps: 2000            # floor on the first buy (default 2000 = 20%)
+launch:
+  opening_tick: 97980           # SDK ladder preset; multiple of 60, changes the opening price
+  creator_tax_bps: 0            # all limits are checked against live launcher policy
+  delay_seconds: 0
+  opening_bps: 0
+  floor_bps: 0
+  decay_seconds: 0
+  recipients: []               # optional { wallet: "0x...", share_bps: 2000 } entries
+
 ```
 
-Dry-run first, always. It validates the config, resolves the factory, proves
-the RPC and the addresses artifact name the same chain, and says which launch
-path it will take. It needs RPC access but no key:
+Replace `0xYourWallet` with the public signer address. On Infinity `agent.owner`
+must equal the signing wallet: it cannot transfer token admin to another wallet.
+The whole supply enters locked liquidity. `tokenomics.vault`,
+`pre_purchase_og` and `slippage_bps` belong to the retired stack and are rejected
+on Infinity. The old open TokenLaunchModule used `agent.owner` only as a
+first-buy recipient; do not reuse that ownership advice for Infinity.
+
+Recipients are wallet addresses with positive shares of the creator wallet
+portion, in bps. At most 15 co-recipients, total below 10,000; the creator keeps
+the rest. For example, `recipients: [{ wallet: "0x...", share_bps: 2000 }]`.
+The SDK derives wallet identities; this CLI does not resolve X handles.
+
+Omit `agent.id` for an ordinary token. To link an existing native agent, set its
+quoted decimal ID (including "0"), sign as its current owner, and ensure its
+seal and Comfy-assigned compute wallet already exist and it has no token
+association. `launchForAgent` checks these during simulation. This command launches
+the token and associates it; it does not create the native agent or its runtime.
 
 ```bash
 comfy deploy -c agent.yaml --dry-run
+# Once the configuration is reviewed and the launch is authorized, with PRIVATE_KEY set:
+comfy deploy -c agent.yaml
 ```
 
-Fix what it reports before going further. Then launch with a funded key in the
-environment, never on the command line and never in the yaml:
+Dry-run loads no key. It checks the manifest's chain against `RPC_URL`, reads
+live policy and launch fee at one block, validates the SDK parameters and
+simulates the exact call from `agent.owner`. Deployment repeats those reads,
+sends the exact launch fee, and prints the submitted hash and proven token/pool.
+A passing simulation does not reserve the policy or guarantee inclusion.
 
-```bash
-PRIVATE_KEY=$COMFY_DEPLOYER_KEY comfy deploy -c agent.yaml
-```
-
-The output prints the token and pool address. The open module path fixes the
-token admin and the funded compute ledger to the SIGNING key, so launch with
-the key that should own it. Confirm it earns:
-
-```bash
-curl -s "$WARMTH_API/warmth/<owner-address>"
-```
+Fees and splits vary per pool. Read `FeeSplitter.splitOf(poolId)` for existing
+pools; new launches take the live launcher's policy. Compute allocation starts
+at zero and is configured separately by the creator. Say "funds compute"
+only when describing actual funding, never claim a launch purchased inference.
 
 ## 2. Sign in (bazaar writes need it)
 
@@ -145,27 +166,13 @@ nothing. The unscoped `comfy-mcp` on npm is ComfyUI's, not this.
 
 ## Rules
 
-- Never invent a private key and never print one. Read `PRIVATE_KEY` from env
-  or `--key-file`. If it is unset, STOP and ask the user for it. Never search the
-  filesystem, shell history, or other configs for keys.
-- Dry-run before every launch. A dry-run that fails on RPC or chain mismatch is
-  a failed dry-run, not proof the artifact is safe.
-- The first buy has a hard floor derived from the ladder's start price minus
-  `slippage_bps`; a violation reverts the whole deploy. Tighten it for small buys.
-- A submitted launch with no readable receipt is NOT a failed launch: the CLI
-  prints the hash and says to verify it. Do not rerun until it is confirmed or
-  reverted; a blind retry can deploy a second token.
-- Say "funds compute", never "bought inference": a tenth of every trade's 1%
-  fee accrues as onchain compute funding for the agent, and only that is true.
-- The admin factory is allowlisted. On a shared stack that forces `--factory`
-  (or has no token extension), sign with the platform key and set `agent.owner`
-  to the creator's wallet: on that path `owner` becomes the token admin and the
-  creator, and a wrong value cannot be corrected afterwards. A deploy that
-  reverts with `0x82b42900` means the signer is not a factory admin; the CLI
-  translates that selector for you.
-- Tickers are not unique onchain. Only a byte-identical config replays (the
-  CREATE2 guard), and the CLI salts every run, so uniqueness is a policy you
-  check before launching, not one the chain enforces.
-- This file is mirrored to `0g-axion/comfy-skills` (what `npx skills add`
-  fetches). The monorepo copy is the source of truth; push the mirror with
-  every change or the two drift.
+- Never request a key in chat, print one, or put it in YAML. Read `PRIVATE_KEY`
+  from the environment (`auth login` also supports `--key-file`). If absent,
+  ask the user to configure it locally. Do not search for keys.
+- Dry-run before launching and honor the user's existing launch authorization.
+- A submitted transaction without a readable receipt may have succeeded.
+  Verify the printed hash before retrying; a retry can create a second token.
+- MCP is read-only. It cannot launch, sign or configure compute allocation.
+- Tickers are not unique onchain; check the market if uniqueness matters.
+- Source of truth is `skills/comfy-skills/SKILL.md` in `0g-axion/comfy`.
+  Mirror changes to `0g-axion/comfy-skills` so `npx skills add` gets them.
