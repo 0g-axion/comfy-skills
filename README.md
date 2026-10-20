@@ -9,7 +9,7 @@ npx skills add 0g-axion/comfy-skills
 ```
 
 The skill drives [`comfy-cli`](https://www.npmjs.com/package/comfy-cli)
-(`0.3.0` or newer; run `comfy --version`) and points MCP clients at
+(`0.9.1` or newer; run `comfy --version`) and points MCP clients at
 [`@0g-axion/comfy-mcp`](https://www.npmjs.com/package/@0g-axion/comfy-mcp).
 An Infinity launch creates a token and locks its supply in the price ladder.
 Launch terms and recipient shares are configurable; fees and splits come from
